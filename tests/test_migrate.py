@@ -901,3 +901,26 @@ def test_sort_all_version_files(mocker):
         "10_datetime_update.sql",
         "11_datetime_update.sql",
     ]
+
+
+def test_sort_sql_and_py_version_files(mocker):
+    mocker.patch(
+        "os.listdir",
+        return_value=[
+            "1_datetime_update.sql",
+            "11_datetime_update.sql",
+            "10_datetime_update.py",
+            "2_datetime_update.sql",
+            "3_datetime_update.py",
+        ],
+    )
+
+    Migrate.migrate_location = "."
+
+    assert Migrate.get_all_version_files() == [
+        "1_datetime_update.sql",
+        "2_datetime_update.sql",
+        "3_datetime_update.py",
+        "10_datetime_update.py",
+        "11_datetime_update.sql",
+    ]

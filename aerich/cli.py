@@ -1,4 +1,5 @@
 import asyncio
+import importlib.util
 import os
 import sys
 from configparser import ConfigParser
@@ -113,13 +114,25 @@ async def upgrade(ctx: Context):
         if not exists:
             async with in_transaction(get_app_connection_name(config, app)) as conn:
                 file_path = Path(Migrate.migrate_location, version_file)
-                content = get_version_content_from_file(file_path)
-                upgrade_query_list = content.get("upgrade")
-                for upgrade_query in upgrade_query_list:
-                    await conn.execute_script(upgrade_query)
+
+                if version_file.endswith(".sql"):
+                    content = get_version_content_from_file(file_path)
+                    upgrade_query_list = content.get("upgrade")
+                    for upgrade_query in upgrade_query_list:
+                        await conn.execute_script(upgrade_query)
+
+                elif version_file.endswith(".py"):
+                    spec = importlib.util.spec_from_file_location(
+                        "upgrade", str(file_path.resolve())
+                    )
+                    migration = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(migration)
+                    await migration.upgrade(conn)
+
                 await Aerich.create(
                     version=version_file, app=app, content=get_models_describe(app),
                 )
+
             click.secho(f"Success upgrade {version_file}", fg=Color.green)
             migrated = True
     if not migrated:
@@ -165,13 +178,22 @@ async def downgrade(ctx: Context, version: int, delete: bool):
         file = version.version
         async with in_transaction(get_app_connection_name(config, app)) as conn:
             file_path = Path(Migrate.migrate_location, file)
-            content = get_version_content_from_file(file_path)
-            downgrade_query_list = content.get("downgrade")
-            if not downgrade_query_list:
-                click.secho("No downgrade items found", fg=Color.yellow)
-                return
-            for downgrade_query in downgrade_query_list:
-                await conn.execute_query(downgrade_query)
+
+            if file.endswith(".sql"):
+                content = get_version_content_from_file(file_path)
+                downgrade_query_list = content.get("downgrade")
+                if not downgrade_query_list:
+                    click.secho("No downgrade items found", fg=Color.yellow)
+                    return
+                for downgrade_query in downgrade_query_list:
+                    await conn.execute_query(downgrade_query)
+
+            elif file.endswith(".py"):
+                spec = importlib.util.spec_from_file_location("downgrade", str(file_path.resolve()))
+                migration = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(migration)
+                await migration.downgrade(conn)
+
             await version.delete()
             if delete:
                 os.unlink(file_path)

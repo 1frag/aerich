@@ -39,7 +39,11 @@ class Migrate:
     @classmethod
     def get_all_version_files(cls) -> List[str]:
         return sorted(
-            filter(lambda x: x.endswith("sql"), os.listdir(cls.migrate_location)),
+            (
+                x
+                for x in os.listdir(cls.migrate_location)
+                if x.endswith(".sql") or x.endswith(".py")
+            ),
             key=lambda x: int(x.split("_")[0]),
         )
 
